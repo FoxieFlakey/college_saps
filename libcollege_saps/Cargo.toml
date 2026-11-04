@@ -1,0 +1,10 @@
+[package]
+name = "libcollege_saps"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+arbitrary-int = "2.2.0"
+num-derive = "0.5.1"
+num-traits = "0.2.19"
+thiserror = "2.0.21"
