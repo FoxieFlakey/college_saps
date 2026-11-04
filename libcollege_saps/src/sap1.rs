@@ -10,7 +10,7 @@ pub struct SAP1 {
     pub accumulator: u8,
     pub register_b: u8,
     pub out_register: u8,
-    pub program_counter: u8,
+    pub program_counter: u4,
     pub is_halted: bool,
     pub stage: Stage,
     pub decoded_op: Opcode,
@@ -99,7 +99,7 @@ impl SAP1 {
         let new_bus;
         match self.stage {
             Stage::Fetch => {
-                new_bus = self.memory[usize::from(self.program_counter)];
+                new_bus = self.memory[usize::from(self.program_counter.value())];
                 self.instruction_register = new_bus;
                 self.stage = Stage::Decode;
             }
@@ -162,7 +162,7 @@ impl SAP1 {
             }
             Stage::Increment => {
                 new_bus = 0;
-                self.program_counter += 1;
+                self.program_counter = self.program_counter.wrapping_add(u4::from_u8(1));
                 self.stage = Stage::Fetch;
             }
         }
