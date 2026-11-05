@@ -25,6 +25,33 @@ pub struct SAP1 {
     // accumulator and register B
     pub alu_output: u8,
     pub alu_opcode: ALUOpcode,
+    pub micro_operation_done: MicroOperation,
+}
+
+#[derive(Clone, Copy)]
+pub enum MicroOperation {
+    IncrementPC,
+    MoveOperation { src: MoveSource, dest: Register },
+    Decoded,
+    Halt,
+    Nothing,
+}
+
+#[derive(Clone, Copy)]
+pub enum MoveSource {
+    Accumulator,
+    ALUOutput,
+    DecodedOperand,
+    Memory { addr: u4 },
+}
+
+#[derive(Clone, Copy)]
+pub enum Register {
+    A,
+    B,
+    InstructionRegister,
+    Output,
+    MemoryAddressRegister,
 }
 
 #[derive(FromPrimitive)]
@@ -74,6 +101,7 @@ impl Default for SAP1 {
             decoded_operand: Default::default(),
             alu_opcode: Default::default(),
             bus: Default::default(),
+            micro_operation_done: MicroOperation::IncrementPC,
         }
     }
 }
@@ -102,6 +130,12 @@ impl SAP1 {
                 new_bus = self.memory[usize::from(self.program_counter.value())];
                 self.instruction_register = new_bus;
                 self.stage = Stage::Decode;
+                self.micro_operation_done = MicroOperation::MoveOperation {
+                    src: MoveSource::Memory {
+                        addr: self.program_counter,
+                    },
+                    dest: Register::InstructionRegister,
+                };
             }
             Stage::Decode => {
                 new_bus = 0;
@@ -116,20 +150,30 @@ impl SAP1 {
                 self.decoded_op = opcode;
                 self.decoded_operand = operand;
                 self.stage = Stage::Execute1;
+                self.micro_operation_done = MicroOperation::Decoded;
             }
             Stage::Execute1 => {
                 match self.decoded_op {
                     Opcode::LoadA | Opcode::Add | Opcode::Sub => {
                         new_bus = self.decoded_operand.as_u8();
                         self.memory_address_register = u4::from_u8(new_bus);
+                        self.micro_operation_done = MicroOperation::MoveOperation {
+                            src: MoveSource::DecodedOperand,
+                            dest: Register::MemoryAddressRegister,
+                        };
                     }
                     Opcode::Out => {
                         new_bus = self.accumulator;
                         self.out_register = new_bus;
+                        self.micro_operation_done = MicroOperation::MoveOperation {
+                            src: MoveSource::Accumulator,
+                            dest: Register::Output,
+                        };
                     }
                     Opcode::Halt => {
                         new_bus = 0;
                         self.is_halted = true;
+                        self.micro_operation_done = MicroOperation::Halt;
                     }
                 }
 
@@ -140,12 +184,27 @@ impl SAP1 {
                     Opcode::LoadA => {
                         new_bus = self.memory[usize::from(self.memory_address_register.as_u8())];
                         self.accumulator = new_bus;
+                        self.micro_operation_done = MicroOperation::MoveOperation {
+                            src: MoveSource::Memory {
+                                addr: self.memory_address_register,
+                            },
+                            dest: Register::A,
+                        }
                     }
                     Opcode::Add | Opcode::Sub => {
                         new_bus = self.memory[usize::from(self.memory_address_register.as_u8())];
                         self.register_b = new_bus;
+                        self.micro_operation_done = MicroOperation::MoveOperation {
+                            src: MoveSource::Memory {
+                                addr: self.memory_address_register,
+                            },
+                            dest: Register::B,
+                        }
                     }
-                    Opcode::Out | Opcode::Halt => new_bus = 0,
+                    Opcode::Out | Opcode::Halt => {
+                        new_bus = 0;
+                        self.micro_operation_done = MicroOperation::Nothing;
+                    }
                 }
 
                 self.stage = Stage::Execute3;
@@ -156,7 +215,10 @@ impl SAP1 {
                         new_bus = self.alu_output;
                         self.accumulator = new_bus;
                     }
-                    Opcode::LoadA | Opcode::Out | Opcode::Halt => new_bus = 0,
+                    Opcode::LoadA | Opcode::Out | Opcode::Halt => {
+                        self.micro_operation_done = MicroOperation::Nothing;
+                        new_bus = 0;
+                    }
                 }
                 self.stage = Stage::Increment;
             }
@@ -164,6 +226,7 @@ impl SAP1 {
                 new_bus = 0;
                 self.program_counter = self.program_counter.wrapping_add(u4::from_u8(1));
                 self.stage = Stage::Fetch;
+                self.micro_operation_done = MicroOperation::IncrementPC;
             }
         }
 
