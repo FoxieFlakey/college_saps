@@ -158,7 +158,7 @@ impl SAP1 {
 
                 self.micro_operation_done = MicroOperation::MoveOperation {
                     src: MoveSource::Memory {
-                        addr: self.program_counter,
+                        addr: self.memory_address_register,
                     },
                     dest: Register::InstructionRegister,
                 };
