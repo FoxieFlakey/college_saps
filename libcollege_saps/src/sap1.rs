@@ -42,6 +42,7 @@ pub enum MoveSource {
     Accumulator,
     ALUOutput,
     DecodedOperand,
+    ProgramCounter,
     Memory { addr: u4 },
 }
 
@@ -76,12 +77,12 @@ impl Default for ALUOpcode {
 }
 
 pub enum Stage {
-    Fetch,
-    Decode,
+    Fetch1,
+    Fetch2,
     Execute1,
     Execute2,
     Execute3,
-    Increment,
+    Fetch3,
 }
 
 impl Default for SAP1 {
@@ -96,7 +97,7 @@ impl Default for SAP1 {
             program_counter: Default::default(),
             is_halted: Default::default(),
             alu_output: Default::default(),
-            stage: Stage::Fetch,
+            stage: Stage::Fetch1,
             decoded_op: Opcode::LoadA,
             decoded_operand: Default::default(),
             alu_opcode: Default::default(),
@@ -126,19 +127,24 @@ impl SAP1 {
 
         let new_bus;
         match self.stage {
-            Stage::Fetch => {
-                new_bus = self.memory[usize::from(self.program_counter.value())];
-                self.instruction_register = new_bus;
-                self.stage = Stage::Decode;
+            Stage::Fetch1 => {
+                new_bus = self.program_counter.as_u8();
+                self.memory_address_register = self.program_counter;
+                self.stage = Stage::Fetch2;
                 self.micro_operation_done = MicroOperation::MoveOperation {
-                    src: MoveSource::Memory {
-                        addr: self.program_counter,
-                    },
-                    dest: Register::InstructionRegister,
+                    src: MoveSource::ProgramCounter,
+                    dest: Register::MemoryAddressRegister,
                 };
             }
-            Stage::Decode => {
+            Stage::Fetch2 => {
                 new_bus = 0;
+                self.program_counter = self.program_counter.wrapping_add(u4::from_u8(1));
+                self.micro_operation_done = MicroOperation::IncrementPC;
+                self.stage = Stage::Fetch3;
+            }
+            Stage::Fetch3 => {
+                new_bus = self.memory[usize::from(self.memory_address_register.as_u8())];
+                self.instruction_register = new_bus;
 
                 let opcode = u4::extract_u8(self.instruction_register, 4);
                 let operand = u4::extract_u8(self.instruction_register, 0);
@@ -149,8 +155,14 @@ impl SAP1 {
 
                 self.decoded_op = opcode;
                 self.decoded_operand = operand;
+
+                self.micro_operation_done = MicroOperation::MoveOperation {
+                    src: MoveSource::Memory {
+                        addr: self.program_counter,
+                    },
+                    dest: Register::InstructionRegister,
+                };
                 self.stage = Stage::Execute1;
-                self.micro_operation_done = MicroOperation::Decoded;
             }
             Stage::Execute1 => {
                 match self.decoded_op {
@@ -224,13 +236,7 @@ impl SAP1 {
                         new_bus = 0;
                     }
                 }
-                self.stage = Stage::Increment;
-            }
-            Stage::Increment => {
-                new_bus = 0;
-                self.program_counter = self.program_counter.wrapping_add(u4::from_u8(1));
-                self.stage = Stage::Fetch;
-                self.micro_operation_done = MicroOperation::IncrementPC;
+                self.stage = Stage::Fetch1;
             }
         }
 
