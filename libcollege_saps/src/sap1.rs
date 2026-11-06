@@ -214,6 +214,10 @@ impl SAP1 {
                     Opcode::Add | Opcode::Sub => {
                         new_bus = self.alu_output;
                         self.accumulator = new_bus;
+                        self.micro_operation_done = MicroOperation::MoveOperation {
+                            src: MoveSource::ALUOutput,
+                            dest: Register::A,
+                        };
                     }
                     Opcode::LoadA | Opcode::Out | Opcode::Halt => {
                         self.micro_operation_done = MicroOperation::Nothing;
